@@ -202,8 +202,15 @@ function initScrollSpy(book: HTMLElement, nav: HTMLElement): () => void {
     const a = nav.querySelector('a[href^="#"]')
     return a ? a.getAttribute('href')!.slice(1) : null
   }
-  function anchoredOrFirst(id: string | null): string | null {
+  function anchoredOrNearest(id: string | null): string | null {
     if (id && nav.querySelector(`a[href="#${id}"]`)) return id
+    if (id) {
+      const sections = Array.from(book.querySelectorAll('.book__section'))
+      for (let i = sections.findIndex((section) => section.id === id) - 1; i >= 0; i--) {
+        const sectionId = sections[i].id
+        if (sectionId && nav.querySelector(`a[href="#${sectionId}"]`)) return sectionId
+      }
+    }
     return firstAnchoredId()
   }
 
@@ -267,7 +274,8 @@ function initScrollSpy(book: HTMLElement, nav: HTMLElement): () => void {
   function bestVisible(): string | null {
     const liveSections = book.querySelectorAll('.book__section')
     for (let i = 0; i < liveSections.length; i++) {
-      if (visible.has(liveSections[i].id)) return liveSections[i].id
+      const id = liveSections[i].id
+      if (id && visible.has(id)) return id
     }
     return null
   }
@@ -275,11 +283,14 @@ function initScrollSpy(book: HTMLElement, nav: HTMLElement): () => void {
   const observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) visible.add((entry.target as HTMLElement).id)
-        else visible.delete((entry.target as HTMLElement).id)
+        const id = (entry.target as HTMLElement).id
+        if (!id) return
+        if (entry.isIntersecting) visible.add(id)
+        else visible.delete(id)
       })
       if (scrollLocked) return
-      setActive(anchoredOrFirst(bestVisible()))
+      const best = bestVisible()
+      if (best !== null) setActive(anchoredOrNearest(best))
     },
     { root: book, rootMargin: '0px 0px -60% 0px', threshold: 0 },
   )
@@ -287,7 +298,7 @@ function initScrollSpy(book: HTMLElement, nav: HTMLElement): () => void {
   const firstSections = book.querySelectorAll('.book__section')
   firstSections.forEach((s) => observer.observe(s))
   const firstId = firstSections[0]?.id ?? null
-  setActive(anchoredOrFirst(firstId))
+  setActive(anchoredOrNearest(firstId))
 
   function onResize() {
     const activeAnchor = nav.querySelector(
@@ -318,7 +329,8 @@ function initScrollSpy(book: HTMLElement, nav: HTMLElement): () => void {
       book.removeEventListener('touchstart', release)
       pendingRelease = null
       pendingTimeoutId = null
-      setActive(anchoredOrFirst(bestVisible()))
+      const best = bestVisible()
+      if (best !== null) setActive(anchoredOrNearest(best))
     }
     pendingRelease = release
     book.addEventListener('scrollend', release, { once: true })

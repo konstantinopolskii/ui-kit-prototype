@@ -44,6 +44,24 @@ function buildBookNav(bodyHtml: string, navAttrs = ''): { book: HTMLElement; nav
   }
 }
 
+function addManualNav(nav: HTMLElement, ids: string[]) {
+  const group = document.createElement('section')
+  group.className = 'nav-group'
+  const list = document.createElement('ul')
+  list.className = 'nav-group__items'
+  ids.forEach((id) => {
+    const item = document.createElement('li')
+    item.innerHTML = `<a href="#${id}">${id}</a>`
+    list.appendChild(item)
+  })
+  group.appendChild(list)
+  nav.appendChild(group)
+}
+
+function activeId(nav: HTMLElement): string | null {
+  return nav.querySelector('li.is-active > a')?.getAttribute('href')?.slice(1) ?? null
+}
+
 describe('useScrollSpy behavior', () => {
   it('stamps ids on book__section and direct h2/h3 children, hand-authored ids win', () => {
     const { book, nav } = buildBookNav(`
@@ -128,6 +146,83 @@ describe('useScrollSpy behavior', () => {
     expect(indicator.classList.contains('is-positioned')).toBe(true)
     expect(indicator.style.transform).toMatch(/^translate3d\(0,-?\d+(\.\d+)?px,0\)$/)
 
+    dispose()
+  })
+
+  it('keeps the nearest previous anchored section active when manual nav omits a section', () => {
+    const { book, nav } = buildBookNav(
+      `
+        <article class="book__section" id="alpha"><h2>Alpha</h2></article>
+        <article class="book__section" id="beta"><h2>Beta</h2></article>
+        <article class="book__section" id="omitted"><h2>Omitted</h2></article>
+        <article class="book__section" id="gamma"><h2>Gamma</h2></article>
+      `,
+      'data-nav="manual"',
+    )
+    addManualNav(nav, ['alpha', 'beta', 'gamma'])
+    const dispose = useScrollSpy(book, nav)
+    const sections = book.querySelectorAll('.book__section')
+    const observer = FakeIntersectionObserver.instances.at(-1)!
+
+    observer.trigger([{ target: sections[2], isIntersecting: true }])
+
+    expect(activeId(nav)).toBe('beta')
+    dispose()
+  })
+
+  it('preserves the current item when no section is visible', () => {
+    const { book, nav } = buildBookNav(`
+      <article class="book__section"><h2>Alpha</h2></article>
+      <article class="book__section"><h2>Beta</h2></article>
+    `)
+    const dispose = useScrollSpy(book, nav)
+    const sections = book.querySelectorAll('.book__section')
+    const observer = FakeIntersectionObserver.instances.at(-1)!
+
+    observer.trigger([{ target: sections[1], isIntersecting: true }])
+    expect(activeId(nav)).toBe('beta')
+
+    observer.trigger([{ target: sections[1], isIntersecting: false }])
+    expect(activeId(nav)).toBe('beta')
+    dispose()
+  })
+
+  it('preserves the clicked item when scroll lock releases in an empty visibility zone', () => {
+    const { book, nav } = buildBookNav(`
+      <article class="book__section"><h2>Alpha</h2></article>
+      <article class="book__section"><h2>Beta</h2></article>
+    `)
+    const dispose = useScrollSpy(book, nav)
+    const beta = nav.querySelector('a[href="#beta"]') as HTMLAnchorElement
+
+    beta.click()
+    expect(activeId(nav)).toBe('beta')
+
+    book.dispatchEvent(new Event('wheel'))
+    expect(activeId(nav)).toBe('beta')
+    dispose()
+  })
+
+  it('ignores id-less visible sections when choosing the best anchored section', () => {
+    const { book, nav } = buildBookNav(
+      `
+        <article class="book__section"><p>Lead</p></article>
+        <article class="book__section" id="alpha"><h2>Alpha</h2></article>
+        <article class="book__section" id="beta"><h2>Beta</h2></article>
+      `,
+      'data-nav="manual"',
+    )
+    addManualNav(nav, ['alpha', 'beta'])
+    const dispose = useScrollSpy(book, nav)
+    const sections = book.querySelectorAll('.book__section')
+    const observer = FakeIntersectionObserver.instances.at(-1)!
+
+    observer.trigger([
+      { target: sections[0], isIntersecting: true },
+      { target: sections[2], isIntersecting: true },
+    ])
+
+    expect(activeId(nav)).toBe('beta')
     dispose()
   })
 })
